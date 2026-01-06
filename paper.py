@@ -5,6 +5,7 @@ import arxiv
 import tarfile
 import re
 import time
+import json
 from llm import get_llm
 import requests
 from requests.adapters import HTTPAdapter, Retry
@@ -53,26 +54,86 @@ class ArxivPaper:
     @cached_property
     def code_url(self) -> Optional[str]:
         s = requests.Session()
-        retries = Retry(total=5, backoff_factor=0.1)
+        retries = Retry(total=3, backoff_factor=0.3)
         s.mount('https://', HTTPAdapter(max_retries=retries))
+        
+        # 添加请求头，避免被 API 拒绝
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (compatible; ZoteroArxivDaily/1.0)',
+            'Accept': 'application/json'
+        }
+        
         try:
-            paper_list = s.get(f'https://paperswithcode.com/api/v1/papers/?arxiv_id={self.arxiv_id}').json()
-        except Exception as e:
-            logger.debug(f'Error when searching {self.arxiv_id}: {e}')
-            return None
+            # 第一步：查找论文
+            response = s.get(
+                f'https://paperswithcode.com/api/v1/papers/?arxiv_id={self.arxiv_id}',
+                headers=headers,
+                timeout=5,
+                allow_redirects=True  # 允许重定向
+            )
+            
+            # 检查 HTTP 状态码
+            if response.status_code != 200:
+                return None  # 静默处理非 200 状态码
+            
+            # 检查响应内容是否为空
+            if not response.text or len(response.text.strip()) == 0:
+                return None
+            
+            # 检查响应内容类型（但不要因为类型不匹配就失败，先尝试解析）
+            content_type = response.headers.get('Content-Type', '').lower()
+            
+            # 尝试解析 JSON
+            try:
+                paper_list = response.json()
+            except (ValueError, json.JSONDecodeError) as e:
+                # JSON 解析失败，可能是 API 返回了 HTML 错误页面或其他格式
+                return None
 
-        if paper_list.get('count',0) == 0:
-            return None
-        paper_id = paper_list['results'][0]['id']
+            if paper_list.get('count', 0) == 0:
+                return None
+            
+            if not paper_list.get('results') or len(paper_list['results']) == 0:
+                return None
+                
+            paper_id = paper_list['results'][0]['id']
 
-        try:
-            repo_list = s.get(f'https://paperswithcode.com/api/v1/papers/{paper_id}/repositories/').json()
+            # 第二步：获取代码仓库
+            response = s.get(
+                f'https://paperswithcode.com/api/v1/papers/{paper_id}/repositories/',
+                headers=headers,
+                timeout=5,
+                allow_redirects=True
+            )
+            
+            # 检查 HTTP 状态码
+            if response.status_code != 200:
+                return None
+            
+            # 检查响应内容是否为空
+            if not response.text or len(response.text.strip()) == 0:
+                return None
+            
+            # 尝试解析 JSON
+            try:
+                repo_list = response.json()
+            except (ValueError, json.JSONDecodeError):
+                return None
+                
+            if repo_list.get('count', 0) == 0:
+                return None
+                
+            if not repo_list.get('results') or len(repo_list['results']) == 0:
+                return None
+                
+            return repo_list['results'][0].get('url')
+            
+        except requests.exceptions.RequestException as e:
+            # 静默处理网络错误，不记录到日志（避免日志过多）
+            return None
         except Exception as e:
-            logger.debug(f'Error when searching {self.arxiv_id}: {e}')
+            logger.debug(f'Unexpected error when searching {self.arxiv_id}: {e}')
             return None
-        if repo_list.get('count',0) == 0:
-            return None
-        return repo_list['results'][0]['url']
     
     @cached_property
     def tex(self) -> dict[str,str]:

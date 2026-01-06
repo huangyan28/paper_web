@@ -15,3 +15,9 @@ test.ipynb
 logs
 models
 test-compose.yml
+
+# Cache directory
+cache/
+
+push_to_github.sh
+PUSH_TO_GITHUB.md

@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zotero Papers - 我的论文库</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <!-- 登录界面 -->
+    <div id="login-modal" class="login-modal">
+        <div class="login-container">
+            <h2>登录 Zotero</h2>
+            <p class="login-hint">请输入你的 Zotero ID 和 API Key 来访问你的论文库</p>
+            <form id="login-form">
+                <div class="form-group">
+                    <label for="zotero-id">Zotero ID</label>
+                    <input type="text" id="zotero-id" class="form-input" placeholder="例如: 13156759" required>
+                    <small class="form-hint">在 Zotero 设置 → 同步 → 用户 ID 中查看</small>
+                </div>
+                <div class="form-group">
+                    <label for="zotero-key">API Key</label>
+                    <input type="password" id="zotero-key" class="form-input" placeholder="你的 Zotero API Key" required>
+                    <small class="form-hint">
+                        <a href="https://www.zotero.org/settings/keys" target="_blank">获取 API Key</a>
+                    </small>
+                </div>
+                <div id="login-error" class="error-message" style="display: none;"></div>
+                <button type="submit" class="btn btn-primary btn-block">登录</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="container" id="main-container" style="display: none;">
+        <!-- 顶部导航栏 -->
+        <header class="header">
+            <div class="header-content">
+                <h1 class="logo">📚 Papers</h1>
+                <div class="user-info">
+                    <span id="user-zotero-id"></span>
+                    <button class="btn btn-secondary btn-small" id="logout-btn">登出</button>
+                </div>
+                <nav class="nav">
+            <div class="header-content">
+                <h1 class="logo">📚 Papers</h1>
+                    <button class="nav-btn active" data-tab="zotero">我的论文</button>
+                    <button class="nav-btn" data-tab="recommendations">推荐论文</button>
+                </nav>
+            </div>
+        </header>
+
+        <!-- 主要内容区域 -->
+        <main class="main-content">
+            <!-- Zotero 论文标签页 -->
+            <div id="zotero-tab" class="tab-content active">
+                <div class="section-header">
+                    <h2>我的 Zotero 论文库</h2>
+                    <div class="collection-filter">
+                        <select id="collection-select" class="select-input">
+                            <option value="all">所有收藏夹</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="loading" id="zotero-loading">
+                    <div class="spinner"></div>
+                    <p>正在加载论文...</p>
+                </div>
+                <div id="zotero-papers" class="papers-grid"></div>
+                <div id="zotero-empty" class="empty-state" style="display: none;">
+                    <p>暂无论文</p>
+                </div>
+            </div>
+
+            <!-- 推荐论文标签页 -->
+            <div id="recommendations-tab" class="tab-content">
+                <div class="section-header">
+                    <h2>基于你的兴趣推荐</h2>
+                    <div class="header-actions">
+                        <button class="settings-btn" id="toggle-settings">
+                            <span>⚙️</span> 设置
+                        </button>
+                        <button class="refresh-btn" id="refresh-recommendations">
+                            <span>🔄</span> 刷新推荐
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- 缓存提示和参考文章信息 -->
+                <div id="recommendation-info" class="recommendation-info" style="display: none;"></div>
+                
+                <!-- 推荐设置面板 -->
+                <div class="settings-panel" id="recommendations-settings" style="display: none;">
+                    <div class="settings-content">
+                        <h3>推荐设置</h3>
+                        <div class="setting-group">
+                            <label>ArXiv 类别：</label>
+                            <div class="arxiv-categories-container">
+                                <div class="category-controls">
+                                    <button type="button" class="btn btn-secondary btn-small" onclick="window.selectAllCategories(true)">全选</button>
+                                    <button type="button" class="btn btn-secondary btn-small" onclick="window.selectAllCategories(false)">全不选</button>
+                                </div>
+                                <div class="arxiv-categories" id="arxiv-categories">
+                                    <!-- 类别选项将通过 JavaScript 动态生成 -->
+                                </div>
+                            </div>
+                            <small class="setting-hint">选择你感兴趣的 ArXiv 类别，可多选</small>
+                        </div>
+                        <div class="setting-group">
+                            <label for="date-range-start">日期范围：</label>
+                            <div class="date-range-inputs">
+                                <input type="date" id="date-range-start" class="setting-input">
+                                <span>至</span>
+                                <input type="date" id="date-range-end" class="setting-input">
+                            </div>
+                            <small class="setting-hint">留空表示使用所有日期</small>
+                        </div>
+                        <div class="setting-group">
+                            <div class="paper-selection-header">
+                                <label>用于推荐的 Zotero 文章：</label>
+                                <div class="selection-actions">
+                                    <button type="button" class="btn-link" id="select-all-papers">全选</button>
+                                    <span>|</span>
+                                    <button type="button" class="btn-link" id="deselect-all-papers">全不选</button>
+                                </div>
+                            </div>
+                            <div class="paper-selection-container" id="paper-selection-container">
+                                <div class="paper-selection-loading">正在加载文章列表...</div>
+                            </div>
+                            <small class="setting-hint">选择用于计算推荐分数的文章，默认全部选中</small>
+                        </div>
+                        <div class="setting-actions">
+                            <button class="btn btn-primary" id="apply-settings">应用设置</button>
+                            <button class="btn btn-secondary" id="reset-settings">重置</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="loading" id="recommendations-loading" style="display: none;">
+                    <div class="progress-container">
+                        <div class="progress-bar-wrapper">
+                            <div class="progress-bar" id="progress-bar"></div>
+                        </div>
+                        <p class="progress-text" id="progress-text">正在生成推荐...</p>
+                        <div class="progress-stats" id="progress-stats"></div>
+                        <div class="spinner"></div>
+                    </div>
+                </div>
+                <div id="recommendations-papers" class="papers-grid"></div>
+                <div id="recommendations-empty" class="empty-state" style="display: none;">
+                    <p>暂无推荐</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
+
